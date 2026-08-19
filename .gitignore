@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+supervisory.db
+uploads/
+*.egg-info/
+.ruff_cache/
