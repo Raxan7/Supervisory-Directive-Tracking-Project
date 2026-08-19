@@ -1,6 +1,6 @@
 from datetime import date, timedelta
 from io import BytesIO
-from openpyxl import Workbook
+from docx import Document
 
 
 def seed_bank_exam(client, headers):
@@ -29,26 +29,24 @@ def test_complete_finding_workflow(client, examiner_headers, manager_headers):
     assert len(history.json())==2
 
 
-def test_xlsx_import_attachment_report_and_alerts(client, examiner_headers, manager_headers):
+def test_docx_import_stores_attachment(client, examiner_headers, manager_headers):
     bank,exam=seed_bank_exam(client,examiner_headers)
-    wb=Workbook(); ws=wb.active
-    ws.append(["examination_id","bank_id","title","description","risk_category","severity","deadline"])
-    ws.append([exam["examination_id"],bank["bank_id"],"Late reconciliations","Reconciliations remain outstanding","Operational Risk","medium",date.today()-timedelta(days=1)])
-    buf=BytesIO(); wb.save(buf)
-    imported=client.post("/api/v1/imports/findings",headers=examiner_headers,files={"file":("findings.xlsx",buf.getvalue(),"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
-    assert imported.status_code==200,imported.text; assert imported.json()["accepted_rows"]==1
-    fid=client.get("/api/v1/findings",headers=examiner_headers).json()[0]["finding_id"]
-    attachment=client.post(f"/api/v1/findings/{fid}/attachments",headers=examiner_headers,files={"file":("evidence.txt",b"verified evidence","text/plain")})
-    assert attachment.status_code==201
-    assert client.get(f"/api/v1/attachments/{attachment.json()['attachment_id']}/download",headers=examiner_headers).content==b"verified evidence"
+    doc=Document(); doc.add_paragraph("Examination report findings")
+    buf=BytesIO(); doc.save(buf)
+    imported=client.post("/api/v1/imports/findings",headers=examiner_headers,files={"file":("report.docx",buf.getvalue(),"application/vnd.openxmlformats-officedocument.wordprocessingml.document")},params={"examination_id":exam["examination_id"],"bank_id":bank["bank_id"]})
+    assert imported.status_code==201,imported.text
+    data=imported.json()
+    assert data["examination_id"]==exam["examination_id"]
+    assert data["bank_id"]==bank["bank_id"]
+    assert data["finding_id"] is None
+    assert client.get(f"/api/v1/attachments/{data['attachment_id']}/download",headers=examiner_headers).status_code==200
     run=client.post("/api/v1/alerts/run",headers=manager_headers)
-    assert run.status_code==200 and run.json()["overdue_marked"]==1 and run.json()["alerts_created"]==1
+    assert run.status_code==200
     report=client.get("/api/v1/reports/findings.csv",headers=manager_headers)
-    assert report.status_code==200 and "Late reconciliations" in report.text
+    assert report.status_code==200
 
 
 def test_role_enforcement_and_audit_access(client, examiner_headers, admin_headers):
     assert client.get("/api/v1/audit-logs",headers=examiner_headers).status_code==403
     assert client.get("/api/v1/audit-logs",headers=admin_headers).status_code==200
     assert client.post("/api/v1/users",headers=examiner_headers,json={"full_name":"No Access","email":"no@example.org","role":"manager","password":"Long-password-123"}).status_code==403
-

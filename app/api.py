@@ -11,6 +11,7 @@ from app import models, schemas, services
 from app.core.config import get_settings
 from app.core.security import create_access_token, hash_password, verify_password
 from app.dependencies import CurrentUser, DB, allow_roles
+from app.storage import upload_file, download_file
 
 router = APIRouter(prefix="/api/v1")
 
@@ -197,11 +198,20 @@ def update_action(action_id: int, payload: schemas.RemedialActionUpdate, db: DB,
     services.audit(db,user.user_id,"update","remedial_action",action_id); db.commit(); db.refresh(item); return item
 
 
-@router.post("/imports/findings", response_model=schemas.ImportResult, tags=["Document Import"])
-async def import_findings(db: DB, examiner=Depends(allow_roles(models.UserRole.EXAMINER)), file: UploadFile = File(...)):
+@router.post("/imports/findings", response_model=schemas.AttachmentRead, status_code=201, tags=["Document Import"])
+async def import_findings(db: DB, examiner=Depends(allow_roles(models.UserRole.EXAMINER)), file: UploadFile = File(...), examination_id: int = Query(...), bank_id: int = Query(...)):
     content=await file.read(); settings=get_settings()
     if len(content)>settings.max_upload_bytes: raise HTTPException(413,"File exceeds configured upload limit")
-    return services.import_findings_document(db,content,file.filename or "upload",examiner)
+    if not db.get(models.Examination, examination_id): raise HTTPException(404,"Examination not found")
+    if not db.get(models.Bank, bank_id): raise HTTPException(404,"Bank not found")
+    suffix=Path(file.filename or "").suffix.lower()
+    if suffix not in {".docx", ".pdf"}: raise HTTPException(422,"Only DOCX and PDF files are accepted")
+    original=Path(file.filename or "upload").name
+    safe=re.sub(r"[^A-Za-z0-9._-]","_",original)
+    object_key=f"examinations/{examination_id}/{uuid4().hex}_{safe}"
+    upload_file(object_key, content, file.content_type or "application/octet-stream")
+    item=models.Attachment(examination_id=examination_id,bank_id=bank_id,file_name=original,file_type=file.content_type or "application/octet-stream",file_path=object_key)
+    db.add(item); db.flush(); services.audit(db,examiner.user_id,"upload","attachment",item.attachment_id); db.commit(); db.refresh(item); return item
 
 
 @router.post("/findings/{finding_id}/attachments", response_model=schemas.AttachmentRead, status_code=201, tags=["Document Storage"])
@@ -212,9 +222,9 @@ async def upload_attachment(finding_id: int, db: DB, user=Depends(allow_roles(mo
     if len(content)>settings.max_upload_bytes: raise HTTPException(413,"File exceeds configured upload limit")
     original=Path(file.filename or "attachment").name
     safe=re.sub(r"[^A-Za-z0-9._-]","_",original)
-    directory=settings.upload_dir/str(finding_id); directory.mkdir(parents=True,exist_ok=True)
-    path=directory/f"{uuid4().hex}_{safe}"; path.write_bytes(content)
-    item=models.Attachment(finding_id=finding_id,file_name=original,file_type=file.content_type or "application/octet-stream",file_path=str(path))
+    object_key=f"findings/{finding_id}/{uuid4().hex}_{safe}"
+    upload_file(object_key, content, file.content_type or "application/octet-stream")
+    item=models.Attachment(finding_id=finding_id,file_name=original,file_type=file.content_type or "application/octet-stream",file_path=object_key)
     db.add(item); db.flush(); services.audit(db,user.user_id,"upload","attachment",item.attachment_id); db.commit(); db.refresh(item); return item
 
 
@@ -226,8 +236,10 @@ def list_attachments(finding_id: int, db: DB, _: CurrentUser):
 @router.get("/attachments/{attachment_id}/download", tags=["Document Storage"])
 def download_attachment(attachment_id: int, db: DB, _: CurrentUser):
     item=db.get(models.Attachment,attachment_id)
-    if not item or not Path(item.file_path).is_file(): raise HTTPException(404,"Attachment not found")
-    return FileResponse(item.file_path,media_type=item.file_type,filename=item.file_name)
+    if not item: raise HTTPException(404,"Attachment not found")
+    content=download_file(item.file_path)
+    if content is None: raise HTTPException(404,"File not found")
+    return StreamingResponse(iter([content]),media_type=item.file_type,headers={"Content-Disposition":f'attachment; filename="{item.file_name}"'})
 
 
 @router.post("/findings/{finding_id}/detect-repeats", tags=["AI / ML Analytics"])

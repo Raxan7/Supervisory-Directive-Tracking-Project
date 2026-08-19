@@ -1,5 +1,7 @@
 import os
 import pytest
+from pathlib import Path
+from tempfile import mkdtemp
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -13,9 +15,26 @@ from app.db import Base, get_db  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import User, UserRole  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
+import app.api as api_module  # noqa: E402
+import app.main as main_module  # noqa: E402
 
 engine=create_engine("sqlite:///./test-supervisory.db",connect_args={"check_same_thread":False})
 TestingSession=sessionmaker(bind=engine,autoflush=False,expire_on_commit=False)
+
+_storage_dir=Path(mkdtemp())
+
+def _local_upload(object_key: str, content: bytes, content_type: str) -> None:
+    target=_storage_dir/object_key
+    target.parent.mkdir(parents=True,exist_ok=True)
+    target.write_bytes(content)
+
+def _local_download(object_key: str) -> bytes | None:
+    target=_storage_dir/object_key
+    return target.read_bytes() if target.is_file() else None
+
+api_module.upload_file=_local_upload
+api_module.download_file=_local_download
+main_module.ensure_bucket=lambda: None
 
 
 def override_db():

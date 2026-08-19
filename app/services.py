@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.core.config import Settings
 from app.emailer import send_email
-from app.importers import parse_findings_document
+from app.importers import SUPPORTED_IMPORTS
 
 
 def audit(db: Session, user_id: int, action: str, entity: str, entity_id: int) -> None:
@@ -85,38 +85,6 @@ def detect_repeated_findings(db: Session, finding: models.Finding, threshold: fl
 def pending_deadline_alerts(db: Session, within_days: int = 7) -> list[models.Finding]:
     end = date.today() + timedelta(days=within_days)
     return list(db.scalars(select(models.Finding).where(models.Finding.deadline <= end, models.Finding.status != models.FindingStatus.CLOSED)).all())
-
-
-def import_findings_document(db: Session, content: bytes, filename: str, examiner: models.User) -> schemas.ImportResult:
-    try:
-        rows = parse_findings_document(filename, content)
-    except Exception as exc:
-        return schemas.ImportResult(source_file=filename, accepted_rows=0, rejected_rows=0, errors=[str(exc)])
-    required = {"examination_id", "bank_id", "title", "description", "risk_category", "severity", "deadline"}
-    available = set(rows[0]) if rows else set()
-    if not required.issubset(available):
-        return schemas.ImportResult(source_file=filename, accepted_rows=0, rejected_rows=0, errors=[f"Required columns: {', '.join(sorted(required))}"])
-    accepted = 0; errors = []; imported_ids: list[int] = []
-    for line, row in enumerate(rows, start=2):
-        try:
-            with db.begin_nested():
-                raw_deadline = row["deadline"]
-                parsed_deadline = raw_deadline.date() if isinstance(raw_deadline, datetime) else (raw_deadline if isinstance(raw_deadline, date) else date.fromisoformat(str(raw_deadline).strip()))
-                payload = schemas.FindingCreate(examination_id=int(row["examination_id"]), bank_id=int(row["bank_id"]), title=str(row["title"]).strip(), description=str(row["description"]).strip(), risk_category=str(row["risk_category"]).strip(), severity=models.Severity(str(row["severity"]).strip().lower()), deadline=parsed_deadline)
-                examination = db.get(models.Examination, payload.examination_id)
-                if examination is None or examination.bank_id != payload.bank_id:
-                    raise ValueError("Examination does not belong to the selected bank")
-                item = models.Finding(**payload.model_dump(), examiner_id=examiner.user_id)
-                db.add(item); db.flush(); audit(db, examiner.user_id, "import", "finding", item.finding_id); imported_ids.append(item.finding_id); accepted += 1
-        except Exception as exc:
-            errors.append(f"Row {line}: {exc}")
-    if accepted:
-        db.commit()
-        for finding_id in imported_ids:
-            detect_repeated_findings(db, db.get(models.Finding, finding_id))
-    else:
-        db.rollback()
-    return schemas.ImportResult(source_file=filename, accepted_rows=accepted, rejected_rows=len(errors), errors=errors)
 
 
 def process_deadline_alerts(db: Session, settings: Settings) -> schemas.AlertRunResult:

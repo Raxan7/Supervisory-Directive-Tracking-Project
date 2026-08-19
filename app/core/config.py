@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     alert_scan_seconds: int = 300
     alert_days_before: int = 7
     max_upload_bytes: int = 10 * 1024 * 1024
+    minio_endpoint: str = "minio:9000"
+    minio_access_key: str = "minioadmin"
+    minio_secret_key: str = "minioadmin"
+    minio_bucket: str = "supervisory-uploads"
+    minio_secure: bool = False
     bootstrap_admin_email: str | None = None
     bootstrap_admin_password: str | None = None
     bootstrap_admin_name: str = "System Administrator"

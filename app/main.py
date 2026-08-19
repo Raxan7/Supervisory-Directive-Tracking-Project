@@ -9,11 +9,12 @@ from app.core.config import get_settings
 from app.core.security import hash_password
 from app.db import SessionLocal
 from app.models import User, UserRole
+from app.storage import ensure_bucket
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    settings = get_settings(); settings.upload_dir.mkdir(parents=True, exist_ok=True)
+    settings = get_settings(); ensure_bucket()
     if settings.bootstrap_admin_email and settings.bootstrap_admin_password:
         if len(settings.bootstrap_admin_password) < 10:
             raise RuntimeError("BOOTSTRAP_ADMIN_PASSWORD must contain at least 10 characters")
