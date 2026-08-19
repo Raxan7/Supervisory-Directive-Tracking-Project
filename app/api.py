@@ -71,7 +71,15 @@ def update_bank(bank_id: int, payload: schemas.BankUpdate, db: DB, user=Depends(
 
 @router.post("/examinations", response_model=schemas.ExaminationRead, status_code=201, tags=["Examination Management"])
 def create_examination(payload: schemas.ExaminationCreate, db: DB, user=Depends(allow_roles(models.UserRole.EXAMINER, models.UserRole.ADMIN))):
-    examination = models.Examination(**payload.model_dump()); db.add(examination); db.flush(); services.audit(db, user.user_id, "create", "examination", examination.examination_id); db.commit(); db.refresh(examination); return examination
+    if not db.get(models.Bank, payload.bank_id):
+        raise HTTPException(404, "Bank not found")
+    examination = models.Examination(**payload.model_dump())
+    db.add(examination)
+    db.flush()
+    services.audit(db, user.user_id, "create", "examination", examination.examination_id)
+    db.commit()
+    db.refresh(examination)
+    return examination
 
 
 @router.get("/examinations", response_model=list[schemas.ExaminationRead], tags=["Examination Management"])
