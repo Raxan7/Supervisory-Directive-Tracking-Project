@@ -53,3 +53,7 @@ There is no typecheck command configured; the project does not use mypy or pyrig
 - `ARCHITECTURE_TRACEABILITY.md` — design-to-code mapping; read if you need to understand which original requirement maps to which file.
 - `docs/LOCAL_SETUP.md` — extended local dev instructions (overlaps with README).
 - `.env.example` — canonical list of all environment variables.
+
+## Agent rules
+
+- **Do NOT install dependencies via pip** unless explicitly directed by the user. Dependencies are managed via Docker. Use `docker build` and `docker run` to run tests, lint, or any other tooling that requires project dependencies.

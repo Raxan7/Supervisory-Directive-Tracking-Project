@@ -38,7 +38,6 @@ def test_docx_import_stores_attachment(client, examiner_headers, manager_headers
     data=imported.json()
     assert data["examination_id"]==exam["examination_id"]
     assert data["bank_id"]==bank["bank_id"]
-    assert data["finding_id"] is None
     assert client.get(f"/api/v1/attachments/{data['attachment_id']}/download",headers=examiner_headers).status_code==200
     run=client.post("/api/v1/alerts/run",headers=manager_headers)
     assert run.status_code==200

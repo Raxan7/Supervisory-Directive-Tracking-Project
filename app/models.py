@@ -92,7 +92,6 @@ class Finding(Base):
     examiner: Mapped[User] = relationship(back_populates="findings")
     directives: Mapped[list["Directive"]] = relationship(back_populates="finding", cascade="all, delete-orphan")
     status_history: Mapped[list["StatusHistory"]] = relationship(back_populates="finding", cascade="all, delete-orphan")
-    attachments: Mapped[list["Attachment"]] = relationship(back_populates="finding", cascade="all, delete-orphan")
     alerts: Mapped[list["Alert"]] = relationship(back_populates="finding", cascade="all, delete-orphan")
 
 
@@ -144,13 +143,11 @@ class StatusHistory(Base):
 class Attachment(Base):
     __tablename__ = "attachments"
     attachment_id: Mapped[int] = mapped_column(primary_key=True)
-    finding_id: Mapped[int | None] = mapped_column(ForeignKey("findings.finding_id", ondelete="CASCADE"), index=True, nullable=True)
     examination_id: Mapped[int | None] = mapped_column(ForeignKey("examinations.examination_id", ondelete="CASCADE"), index=True, nullable=True)
     bank_id: Mapped[int | None] = mapped_column(ForeignKey("banks.bank_id", ondelete="CASCADE"), index=True, nullable=True)
     file_name: Mapped[str] = mapped_column(String(255))
     file_type: Mapped[str] = mapped_column(String(100))
     file_path: Mapped[str] = mapped_column(String(500))
-    finding: Mapped[Finding | None] = relationship(back_populates="attachments")
     examination: Mapped[Examination | None] = relationship()
     bank: Mapped[Bank | None] = relationship()
 

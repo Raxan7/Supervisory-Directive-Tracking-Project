@@ -205,32 +205,13 @@ async def import_findings(db: DB, examiner=Depends(allow_roles(models.UserRole.E
     if not db.get(models.Examination, examination_id): raise HTTPException(404,"Examination not found")
     if not db.get(models.Bank, bank_id): raise HTTPException(404,"Bank not found")
     suffix=Path(file.filename or "").suffix.lower()
-    if suffix not in {".docx", ".pdf"}: raise HTTPException(422,"Only DOCX and PDF files are accepted")
+    if suffix not in {".docx", ".pdf", ".xlsx", ".xls"}: raise HTTPException(422,"Only DOCX, PDF, and Excel files are accepted")
     original=Path(file.filename or "upload").name
     safe=re.sub(r"[^A-Za-z0-9._-]","_",original)
     object_key=f"examinations/{examination_id}/{uuid4().hex}_{safe}"
     upload_file(object_key, content, file.content_type or "application/octet-stream")
     item=models.Attachment(examination_id=examination_id,bank_id=bank_id,file_name=original,file_type=file.content_type or "application/octet-stream",file_path=object_key)
     db.add(item); db.flush(); services.audit(db,examiner.user_id,"upload","attachment",item.attachment_id); db.commit(); db.refresh(item); return item
-
-
-@router.post("/findings/{finding_id}/attachments", response_model=schemas.AttachmentRead, status_code=201, tags=["Document Storage"])
-async def upload_attachment(finding_id: int, db: DB, user=Depends(allow_roles(models.UserRole.EXAMINER)), file: UploadFile=File(...)):
-    if not db.get(models.Finding,finding_id): raise HTTPException(404,"Finding not found")
-    content=await file.read(); settings=get_settings()
-    if not content: raise HTTPException(422,"File is empty")
-    if len(content)>settings.max_upload_bytes: raise HTTPException(413,"File exceeds configured upload limit")
-    original=Path(file.filename or "attachment").name
-    safe=re.sub(r"[^A-Za-z0-9._-]","_",original)
-    object_key=f"findings/{finding_id}/{uuid4().hex}_{safe}"
-    upload_file(object_key, content, file.content_type or "application/octet-stream")
-    item=models.Attachment(finding_id=finding_id,file_name=original,file_type=file.content_type or "application/octet-stream",file_path=object_key)
-    db.add(item); db.flush(); services.audit(db,user.user_id,"upload","attachment",item.attachment_id); db.commit(); db.refresh(item); return item
-
-
-@router.get("/findings/{finding_id}/attachments", response_model=list[schemas.AttachmentRead], tags=["Document Storage"])
-def list_attachments(finding_id: int, db: DB, _: CurrentUser):
-    return list(db.scalars(select(models.Attachment).where(models.Attachment.finding_id==finding_id)).all())
 
 
 @router.get("/attachments/{attachment_id}/download", tags=["Document Storage"])

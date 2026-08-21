@@ -180,7 +180,6 @@ class ImportResult(BaseModel):
 
 class AttachmentRead(ORMModel):
     attachment_id: int
-    finding_id: int | None
     examination_id: int | None
     bank_id: int | None
     file_name: str
